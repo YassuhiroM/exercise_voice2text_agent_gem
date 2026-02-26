@@ -1,39 +1,26 @@
 # VoiceFlow Clone (Windows 11) — Voice-to-Text Agent
 
 ## 🛠 Project Overview
-A local, privacy-focused automation agent for Windows 11. It captures voice via a global hotkey, transcribes bilingual speech (EN/ES), styles the text for a "relaxed but correct" tone, and auto-pastes it into the active window.
+A local, privacy-focused automation agent. It captures voice via a global hotkey, transcribes bilingual speech (EN/ES), styles it via Ollama, and auto-pastes it into the active window.
 
-### Hardware Context
-* **CPU:** AMD Ryzen 5 7520U (2.80 GHz)
-* **RAM:** 8.00 GB (7.28 GB usable) — **Optimized for Sequential Pipeline.**
-* **OS:** Windows 11
-
----
-
-## 🏗 System Architecture (8GB RAM Strategy)
-To prevent system freezing, this agent uses a **Sequential Pipeline**:
-1. **Record:** Stream audio to disk (RAM footprint < 50MB).
-2. **Transcribe:** Load `faster-whisper` (tiny/int8), process, then release resources.
-3. **Style:** Call local `Ollama` API (`llama3.2:1b`).
-4. **Paste:** Use `pyautogui` for clipboard injection (`CTRL+V`).
+### Hardware & Environment
+* **CPU:** AMD Ryzen 5 7520U
+* **RAM:** 8.00 GB (7.28 GB usable) — **Optimized with Sequential Processing.**
+* **Python:** 3.11.9 (Stable for AI libraries)
 
 ---
 
-## 🚀 Setup & Usage
+## 🏗 System Architecture (Memory Safety)
+To prevent system lag, the agent executes tasks sequentially:
+1. **Record:** 16kHz Mono audio streamed to disk (~320KB per 10s).
+2. **Transcribe:** `faster-whisper` (tiny/int8) processed on CPU.
+3. **Style:** Local `Ollama` (llama3.2:1b) for grammar correction.
+4. **Paste:** `pyautogui` injection into active cursor.
 
-### 1. Environment (Python 3.11 Required)
-```powershell
-python -m venv venv_ucm_general_python311
-.\venv_ucm_general_python311\Scripts\Activate.ps1
-pip install -r requirements.txt
-2. Local Models
-ASR: Handled automatically by faster-whisper.
+---
 
-Styling: Install Ollama and run:
-ollama pull llama3.2:1b
-
-📁 Project Structure
-Plaintext
+## 📁 Project Structure
+```text
 exercise_voice2text_agent_gem/
 ├── core/
 │   ├── transcriber.py      # DONE: Whisper-tiny integration
@@ -41,5 +28,5 @@ exercise_voice2text_agent_gem/
 │   └── clipboard_paster.py # DONE: Automation logic
 ├── audio_handler.py        # DONE: PyAudio recording logic
 ├── main.py                 # DONE: Orchestrator & Hotkey Listener
-├── requirements.txt        # DONE: Dependency list
-└── README.md               # DONE: Documentation
+├── requirements.txt        # DONE: Verified dependencies
+└── README.md               # DONE: Final Documentation
