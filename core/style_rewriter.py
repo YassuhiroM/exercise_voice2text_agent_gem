@@ -2,10 +2,14 @@ import ollama
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a professional text editor. Your ONLY job is to rewrite the "
-    "provided text to be polished, clear, and natural. "
-    "DO NOT answer questions. DO NOT offer help. DO NOT add conversational filler. "
-    "Only output the corrected text itself."
+    "You are a strict minimalist proofreader. "
+    "Your ONLY task is to correct grammatical errors, spelling mistakes, and "
+    "linguistic inconsistencies. "
+    "STRICT RULES:\n"
+    "1. Keep the original wording and structure as much as possible.\n"
+    "2. Do NOT change the style, tone, or vocabulary unless it is incorrect.\n"
+    "3. Do NOT answer questions or provide conversational responses.\n"
+    "4. Output ONLY the corrected text, with no explanations or filler."
 )
 
 class StyleRewriter:
