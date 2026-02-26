@@ -1,0 +1,10 @@
+customtkinter>=5.2.2
+pynput>=1.7.7
+pyaudio>=0.2.14
+soundfile>=0.12.1
+numpy>=1.26.0
+faster-whisper>=1.0.3
+ollama>=0.3.3
+pyperclip>=1.9.0
+pyautogui>=0.9.54
+pytest>=8.2.0
