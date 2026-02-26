@@ -15,7 +15,7 @@ from core.audio_handler import Recorder
 from core.clipboard_paster import Paster
 from core.style_rewriter import StyleRewriter
 from core.transcriber import Transcriber
-
+import time
 
 class VoiceFlowOrchestrator:
     """Coordinates the full voice-to-text pipeline from a single toggle event."""
@@ -26,15 +26,29 @@ class VoiceFlowOrchestrator:
         self.rewriter = StyleRewriter(model_name="llama3.2:1b", timeout_seconds=10.0)
         self.paster = Paster(paste_delay_seconds=0.1)
 
-    def toggle(self) -> None:
-        """Start recording on first toggle, stop + process on second toggle."""
+    def toggle(self):
         if not self.recorder.is_recording:
-            self._start_recording()
-            return
-
-        audio_path = self.recorder.stop()
-        self._process_recording(audio_path)
-
+            # Start recording
+            audio_path = self.recorder.start()
+            
+            # Start a background "watcher" thread or use a loop
+            threading.Thread(target=self._wait_for_auto_stop, args=(audio_path,), daemon=True).start()
+        else:
+            # Manual stop
+            audio_path = self.recorder.stop()
+            if audio_path:
+                self._process_recording(audio_path)
+    
+    def _wait_for_auto_stop(self, audio_path):
+        """Watches the recorder and processes if a timeout happens."""
+        while self.recorder.is_recording:
+            time.sleep(0.1)  # Check every 100ms
+        
+        # If we get here, the recorder stopped (either manually or via timeout)
+        # We check if we are already processing to avoid double-processing
+        if not self.is_processing:
+            self._process_recording(audio_path)
+        
     def _start_recording(self) -> None:
         audio_path = self.recorder.start()
         print(f"[RECORDING] Listening... saving to {audio_path}")
