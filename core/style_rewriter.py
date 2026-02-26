@@ -10,6 +10,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "2. Do NOT change the style, tone, or vocabulary unless it is incorrect.\n"
     "3. Do NOT answer questions or provide conversational responses.\n"
     "4. Output ONLY the corrected text, with no explanations or filler."
+    "5. Consider only these languages: English, Spanish, Portuguese."
 )
 
 class StyleRewriter:
