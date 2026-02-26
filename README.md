@@ -1,92 +1,80 @@
+To ensure your **Gemini 1.5 Pro** coder has the perfect context for Step 3, your `README.md` should act as a "Single Source of Truth." It must reflect the hardware constraints and the successful completion of the recording module.
+
+Here is exactly how your `README.md` should look.
+
+---
+
 # VoiceFlow Clone (Windows 11) — Voice-to-Text Agent
 
-## Step 1 — Plan
+## 🛠 Project Overview
 
-This repository starts with the **planning phase** for a low-memory voice-to-text desktop agent for Windows 11.
+A local, privacy-focused automation agent that captures voice, transcribes it, styles it for a "relaxed but correct" tone, and pastes it into any active window.
 
-### Objectives
-- Record microphone audio with a global hotkey (`CTRL+ALT+SPACE`).
-- Transcribe bilingual speech (English/Spanish) using `faster-whisper` (`tiny`).
-- Rewrite text with Ollama (`llama3.2:1b`) in a relaxed but grammatically correct style.
-- Copy rewritten text to clipboard and auto-paste with `CTRL+V`.
-- Show live state in a lightweight CustomTkinter overlay.
+### Hardware Constraints (Target System)
+
+* **Processor:** AMD Ryzen 5 7520U (2.80 GHz)
+* **RAM:** 8.00 GB (7.28 GB usable) — **Strict memory management required.**
+* **OS:** Windows 11
 
 ---
 
-## Proposed Project Structure
+## 🏗 Step 1 — Architecture & Plan
+
+* **Sequential Pipeline:** To stay under the 8GB RAM limit, the app runs stages one-by-one:
+`Record -> Stop -> Transcribe (Tiny) -> Style (Ollama 1B) -> Paste`.
+* **Trigger:** Global Hotkey `CTRL+ALT+SPACE` managed via `pynput`.
+* **Dependencies:** `pyaudio` for hardware-level streaming and `faster-whisper` for CPU-optimized inference.
+
+---
+
+## 🎤 Step 2 — Audio Capture Implementation
+
+### Plan
+
+* Implement `audio_handler.py` using **PyAudio**.
+* **Memory Strategy:** Stream audio chunks directly to a temporary `.wav` file on disk to maintain a near-zero RAM footprint during recording.
+* **Audio Specs:** 16kHz, Mono, 16-bit PCM (Native Whisper format).
+
+### Observe & Metrics
+
+* **Data Footprint:** 10 seconds of audio at these specs results in a file of approximately **320 KB**.
+* **RAM Usage:** Minimal (approx. 20-40MB during active recording).
+
+### Repair & Troubleshooting
+
+* **ModuleNotFoundError:** Ensure `pyaudio` is installed in the local environment (`pip install pyaudio`).
+* **DeviceNotFoundError:** Handled gracefully with a custom exception if the microphone is disconnected.
+
+---
+
+## 🔊 Step 3 — Bilingual Transcription (Next)
+
+**Objective:** Convert the saved `.wav` file into raw text using `faster-whisper`.
+
+* **Model:** `tiny` (Multilingual) to support English and Spanish.
+* **Quantization:** `int8` to ensure the model fits within <150MB of RAM.
+
+---
+
+## 📁 Project Structure
 
 ```text
-voiceflow_clone/
-  app.py                     # App entrypoint; starts GUI + service coordination
-  config.py                  # Config values (hotkeys, model names, temp paths)
-  gui/
-    overlay.py               # CustomTkinter small status window
-  core/
-    orchestrator.py          # Sequential pipeline coordinator and state machine
-    hotkey_listener.py       # Non-blocking pynput listener and key-state tracking
-    audio_recorder.py        # Sound capture + wave writing (recording lifecycle)
-    transcriber.py           # faster-whisper wrapper (load, transcribe, unload)
-    style_rewriter.py        # Ollama client wrapper (rewrite prompt + timeout)
-    clipboard_paster.py      # Clipboard write + Ctrl+V automation
-  tests/
-    test_hotkey_listener.py  # Hotkey toggle behavior with mocked key events
-    test_pipeline_flow.py    # Sequential state transitions and lock behavior
-    test_clipboard.py        # Clipboard + paste invocation mocks
+exercise_voice2text_agent_gem/
+├── core/
+│   ├── audio_handler.py    # DONE: Thread-safe recording to disk
+│   ├── transcriber.py      # TODO: Faster-Whisper integration
+│   ├── style_rewriter.py   # TODO: Ollama API integration
+│   └── clipboard_paster.py # TODO: PyAutoGUI automation
+├── main.py                 # DONE: Hotkey listener & state toggle
+├── requirements.txt        # DONE: Optimized dependencies
+└── README.md               # DONE: Documentation & Loop status
+
 ```
 
 ---
 
-## Non-Blocking Hotkey Design (`pynput`)
+### Why this is better for your AI Coder:
 
-### Why this design
-`pynput.keyboard.Listener` is event-driven and can run in its own thread. We use that thread only to detect key combinations and dispatch a small callback to avoid blocking input handling.
+By explicitly stating the **320 KB** calculation and the **Sequential Pipeline** logic in the `README.md`, you prevent the AI from suggesting a solution that loads everything into RAM at once, which would likely crash your 8GB Vivobook.
 
-### Key principles
-1. **Listener thread only detects events** (very small operations).
-2. **Main pipeline work runs elsewhere** (worker thread / queue) to keep UI responsive.
-3. **Debounce toggle** so one key press cannot trigger multiple start/stop transitions.
-4. **State lock** ensures start/stop cannot race.
-
-### Event flow
-1. Track pressed keys in a `set` (`ctrl`, `alt`, `space`).
-2. On each `on_press`, check if all three are present.
-3. If combination becomes active and debounce gate is open:
-   - push `TOGGLE_RECORDING` event to a thread-safe queue.
-   - close debounce gate.
-4. On `on_release`, remove key from set.
-5. When any required key is released, reopen debounce gate.
-
-### Thread model
-- **Thread A (GUI/Main):** CustomTkinter loop and status rendering.
-- **Thread B (Hotkey listener):** pynput keyboard listener.
-- **Thread C (Pipeline worker):** Handles sequential stages:
-  1. Recording
-  2. Transcription
-  3. Styling
-  4. Clipboard + paste
-
-Only Thread C performs heavy operations. This prevents RAM spikes and keeps CPU usage more predictable on 8GB systems.
-
----
-
-## Memory-Safe Sequential Pipeline (8GB Strategy)
-
-- Keep only one heavy model actively used at a time.
-- After transcription completes, release transcriber references and run GC.
-- Run styling step only after audio/transcription objects are released.
-- Keep audio files short and temporary (`.wav` in temp folder), then delete.
-- Use bounded queues and small buffers to avoid accumulating frames.
-
-Target flow:
-
-```text
-Record -> Stop -> Transcribe (tiny) -> Release resources -> Rewrite (Ollama 1B) -> Clipboard/Paste
-```
-
----
-
-## Next Steps (Step 2)
-- Implement modular skeleton files.
-- Implement hotkey listener with event queue and debounce.
-- Add unit tests for toggle logic and sequential state transitions.
-
+**Would you like me to generate the "Memory Check" utility code now? This will help you monitor your 7.28GB RAM in real-time while the transcriber runs.**
