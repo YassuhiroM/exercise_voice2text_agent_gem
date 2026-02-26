@@ -1,3 +1,6 @@
+"""Audio capture handler for VoiceFlow Clone with Silence Detection."""
+
+from __future__ import annotations
 import threading
 import time
 import tempfile
@@ -8,23 +11,30 @@ from typing import Optional
 import pyaudio
 
 class Recorder:
-    def __init__(self, sample_rate: int = 16000, channels: int = 1, frames_per_buffer: int = 1024) -> None:
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        channels: int = 1,
+        frames_per_buffer: int = 1024,
+    ) -> None:
         self.sample_rate = sample_rate
         self.channels = channels
         self.frames_per_buffer = frames_per_buffer
         self.sample_format = pyaudio.paInt16
         self._sample_width = 2
+
         self._lock = threading.RLock()
         self._is_recording = False
+
         self._audio: Optional[pyaudio.PyAudio] = None
         self._stream: Optional[pyaudio.Stream] = None
         self._wave_file: Optional[wave.Wave_write] = None
         self._output_path: Optional[Path] = None
-        
-        # --- IMPROVEMENT: SILENCE TIMEOUT ---
-        self.last_speech_time = 0
-        self.SILENCE_THRESHOLD = 800  # Previous wsa 500
-        self.TIMEOUT_LIMIT = 5.0  # 5 seconds
+
+        # --- SILENCE TIMEOUT SETTINGS ---
+        self.last_speech_time = 0.0
+        self.SILENCE_THRESHOLD = 800  # Higher value ignores more background noise
+        self.TIMEOUT_LIMIT = 5.0      # 5 seconds of silence to auto-stop
 
     @property
     def is_recording(self) -> bool:
@@ -33,24 +43,29 @@ class Recorder:
 
     def start(self) -> Path:
         with self._lock:
-            if self._is_recording: return self._output_path
+            if self._is_recording:
+                return self._output_path
+
             self._audio = pyaudio.PyAudio()
             tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             tmp_wav_path = Path(tmp_wav.name)
             tmp_wav.close()
+
             wave_handle = wave.open(str(tmp_wav_path), "wb")
             wave_handle.setnchannels(self.channels)
             wave_handle.setsampwidth(self._sample_width)
             wave_handle.setframerate(self.sample_rate)
-            
-            self.last_speech_time = time.time() # Reset timer on start
-            
+
+            self.last_speech_time = time.time()
             self._stream = self._audio.open(
-                format=self.sample_format, channels=self.channels,
-                rate=self.sample_rate, input=True,
+                format=self.sample_format,
+                channels=self.channels,
+                rate=self.sample_rate,
+                input=True,
                 frames_per_buffer=self.frames_per_buffer,
                 stream_callback=self._on_audio_chunk,
             )
+
             self._wave_file = wave_handle
             self._output_path = tmp_wav_path
             self._is_recording = True
@@ -59,35 +74,40 @@ class Recorder:
 
     def stop(self) -> Optional[Path]:
         with self._lock:
-            if not self._is_recording: return self._output_path
+            if not self._is_recording:
+                return self._output_path
             self._is_recording = False
             output_path = self._output_path
-            if self._stream:
-                self._stream.stop_stream()
-                self._stream.close()
-            if self._wave_file: self._wave_file.close()
-            if self._audio: self._audio.terminate()
-            return output_path
+
+        if self._stream:
+            self._stream.stop_stream()
+            self._stream.close()
+            self._stream = None
+        if self._wave_file:
+            self._wave_file.close()
+            self._wave_file = None
+        if self._audio:
+            self._audio.terminate()
+            self._audio = None
+        return output_path
+
+    def toggle(self) -> Optional[Path]:
+        return self.stop() if self.is_recording else self.start()
 
     def _on_audio_chunk(self, in_data, frame_count, time_info, status):
         with self._lock:
-            if not self._is_recording: return (None, pyaudio.paComplete)
+            if not self._is_recording:
+                return (None, pyaudio.paComplete)
             
-            # Check for silence
+            # Silence Detection Logic
             audio_data = np.frombuffer(in_data, dtype=np.int16)
             if np.abs(audio_data).mean() > self.SILENCE_THRESHOLD:
                 self.last_speech_time = time.time()
             
-            # Auto-stop if silent for 10s
-            if time.time() - self.last_speech_time > 10.0:
-                # We can't call self.stop() directly here comfortably, 
-                # but we can signal the is_recording to false
-                self._is_recording = False
+            if time.time() - self.last_speech_time > self.TIMEOUT_LIMIT:
+                self._is_recording = False # Signals the orchestrator
                 return (None, pyaudio.paComplete)
 
             if self._wave_file:
                 self._wave_file.writeframes(in_data)
         return (None, pyaudio.paContinue)
-
-    def toggle(self) -> Optional[Path]:
-        return self.stop() if self.is_recording else self.start()
