@@ -1,122 +1,61 @@
 # VoiceFlow Clone (Windows 11) — Voice-to-Text Agent
 
-## Environment Setup
+## 🛠 Project Overview
+A local, privacy-focused automation agent designed for Windows 11. It captures voice via a global hotkey, transcribes bilingual speech (EN/ES), styles the text for a "relaxed but correct" tone, and auto-pastes it into the active window.
 
-Recommended virtual environment name for this machine:
-- `venv_ucm_general_python311`
+### Hardware Context (Critical for Performance)
+* **CPU:** AMD Ryzen 5 7520U (2.80 GHz)
+* **RAM:** 8.00 GB (7.28 GB usable)
+* **GPU:** Integrated Radeon Graphics (shares system RAM)
 
-Example setup (Windows PowerShell):
+---
 
-```powershell
+## 🏗 System Architecture (8GB RAM Strategy)
+To prevent system freezing and memory swapping, this agent uses a **Sequential Pipeline**:
+1. **Record:** Stream audio directly to disk to keep RAM footprint < 50MB.
+2. **Stop & Transcribe:** Load `faster-whisper` (tiny), process, then release resources.
+3. **Style:** Call local `Ollama` API to process text using `llama3.2:1b`.
+4. **Paste:** Use `pyautogui` to inject text into the active cursor position.
+
+---
+
+## 📁 Project Structure
+```text
+exercise_voice2text_agent_gem/
+├── core/
+│   ├── audio_handler.py    # DONE: Thread-safe 16kHz recording to WAV
+│   ├── transcriber.py      # DONE: Bilingual faster-whisper (tiny/int8)
+│   ├── style_rewriter.py   # TODO: Ollama 1B integration
+│   └── clipboard_paster.py # TODO: PyAutoGUI automation
+├── main.py                 # DONE: pynput Hotkey listener (CTRL+ALT+SPACE)
+├── requirements.txt        # DONE: Optimized dependencies
+└── README.md               # DONE: Documentation & Loop status
+🚀 Setup & Usage
+1. Environment
+Recommended virtual environment: venv_ucm_general_python311
+
+PowerShell
 python -m venv venv_ucm_general_python311
 .\venv_ucm_general_python311\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
+2. Local Models
+ASR: Handled automatically by faster-whisper.
 
-> The code does not hardcode the venv name; the active interpreter is used at runtime.
+Styling: Install Ollama and run:
+ollama pull llama3.2:1b
 
----
+📈 Development Progress (Didactic Log)
+Step 1 & 2: Audio & Trigger [DONE]
+Status: Functional. Records at 16kHz Mono to minimize data size (~320KB per 10s).
 
-## Style Profile
+Safety: Uses a thread-safe lock to prevent race conditions during rapid hotkey toggles.
 
-- **Profile name:** Relaxed but Correct
-- **Behavior:** Keep a conversational tone while fixing grammar, punctuation, capitalization, and clarity.
-- **Constraint:** Return only rewritten text (no explanations).
+Step 3: Transcription [DONE]
+Model: tiny (multilingual) with int8 quantization.
 
-System prompt used by Step 4:
+Performance: Optimized for CPU inference on Ryzen 5.
 
-> "You are a writing assistant. Rewrite the following text to be relaxed, conversational, but grammatically perfect. Do not add explanations, only return the corrected text."
+Step 4: Styling [IN PROGRESS]
+Objective: Implement style_rewriter.py to interface with Ollama.
 
----
-
-## Project Structure
-
-```text
-voiceflow_clone/
-  app.py
-  config.py
-  core/
-    __init__.py
-    transcriber.py
-    style_rewriter.py
-    clipboard_paster.py
-```
-
----
-
-## Step 2 — Audio Capture Implementation
-
-- `core/audio_handler.py` records microphone audio at 16kHz mono PCM16.
-- Audio is streamed directly to a temporary WAV file on disk to avoid large RAM buffers.
-- Start/stop/toggle methods are thread-safe.
-
-Expected 10s file size at 16kHz mono PCM16:
-- `16000 * 2 * 10 + 44` ≈ `320,044 bytes` (~320 KB)
-
----
-
-## Step 3 — Bilingual Transcription (ASR)
-
-- `core/transcriber.py` uses `faster-whisper` with:
-  - model: `tiny`
-  - compute type: `int8`
-  - device: `cpu` (or `cuda` when NVIDIA GPU is detected)
-- Supports bilingual EN/ES workflow:
-  - auto-detect with `language=None`
-  - forced language with `language='en'` or `language='es'`
-- Cleans temporary audio file after transcription (`delete_audio=True`).
-
-Benchmark notes for Ryzen 5:
-- Script prints duration, processing time, and RTF.
-- `RTF = processing_time / audio_duration`.
-
----
-
-## Step 4 — Local LLM Styling (Ollama)
-
-- `core/style_rewriter.py` uses model `llama3.2:1b` with timeout protection.
-- Keep sequential resource control: unload ASR model before calling Ollama.
-- Handles `ConnectionError` when Ollama service is unavailable.
-
----
-
-## Step 5 — Automation & Injection (**DONE**)
-
-### Plan
-- `core/clipboard_paster.py` introduces a `Paster` class.
-- Focus assumption: user already triggered via global hotkey and the cursor is in the destination app (Slack/Word/Browser/etc.).
-- Paste flow:
-  1. Receive text
-  2. Copy to clipboard
-  3. Wait 100ms
-  4. Send `Ctrl+V`
-
-### Edit Code
-- Added `Paster.paste_text(text: str)` with:
-  - input validation,
-  - clipboard copy via `pyperclip`,
-  - 0.1s delay,
-  - keyboard injection via `pyautogui.hotkey("ctrl", "v")`.
-
-### Run Tools
-- Manual test command:
-  - `python core/clipboard_paster.py --text "Hello from the Automation Agent!" --wait-seconds 5`
-- Behavior:
-  - script waits 5 seconds so you can click Notepad (or any target input), then pastes.
-
-### Observe
-- Text should appear almost instantly after the 5-second wait.
-- Clipboard should match the pasted value and is printed by the script.
-
-### Repair
-- If keystrokes are not registering due to Windows permissions/security context:
-  - run terminal as **Administrator** and retry.
-  - ensure target application is focused and accepts keyboard shortcuts.
-
----
-
-## Sequential Low-Memory Pipeline
-
-```text
-Record -> Stop -> Transcribe (tiny/int8) -> Unload ASR resources -> Rewrite (llama3.2:1b) -> Clipboard/Paste
-```
+Persona: Relaxed but grammatically perfect.
