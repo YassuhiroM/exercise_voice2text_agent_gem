@@ -27,10 +27,26 @@ class GlobalHotkeyController:
         self._pressed.discard(key)
         self._combo_down = False
 
+STARTUP_HELP = """\
+Voice2Text Agent
+Turns your voice into polished text and pastes it where your cursor is.
+
+How to use:
+1) Hold CTRL + ALT + SPACE to start recording
+2) Release to stop
+3) Wait for Transcribing / Styling
+4) The result is pasted automatically (Ctrl+V)
+
+Controls:
+- CTRL + ALT + SPACE: Push-to-talk record
+- ESC: Exit
+"""
+
 def main():
     orchestrator = VoiceFlowOrchestrator()
     controller = GlobalHotkeyController(orchestrator)
-    print("Agent Active. CTRL+ALT+SPACE to Record | ESC to Exit")
+    #print("Agent Active. CTRL+ALT+SPACE to Record | ESC to Exit")
+    print(STARTUP_HELP)
     with keyboard.Listener(on_press=controller.on_press, on_release=controller.on_release) as listener:
         listener.join()
 
