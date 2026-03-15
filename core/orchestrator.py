@@ -1,24 +1,28 @@
 """VoiceFlow end-to-end orchestrator.
 
-Step 6 goals:
+Goals:
 - Link recording -> transcription -> styling -> clipboard paste.
 - Keep memory usage low on 8GB systems via sequential processing + gc.collect().
 - Print clear status updates for each pipeline stage.
+- Avoid double-processing (manual stop + watcher thread).
+- Support push-to-talk + optional recorder auto-stop behavior safely.
 """
 
 from __future__ import annotations
 
 import gc
+import threading
+import time
 from pathlib import Path
 
 from core.audio_handler import Recorder
 from core.clipboard_paster import Paster
 from core.style_rewriter import StyleRewriter
 from core.transcriber import Transcriber
-import time
+
 
 class VoiceFlowOrchestrator:
-    """Coordinates the full voice-to-text pipeline from a single toggle event."""
+    """Coordinates the full voice-to-text pipeline from hotkey events."""
 
     def __init__(self) -> None:
         self.recorder = Recorder()
@@ -26,36 +30,107 @@ class VoiceFlowOrchestrator:
         self.rewriter = StyleRewriter(model_name="llama3.2:1b", timeout_seconds=10.0)
         self.paster = Paster(paste_delay_seconds=0.1)
 
-    def toggle(self):
-        if not self.recorder.is_recording:
-            # Start recording
-            audio_path = self.recorder.start()
-            
-            # Start a background "watcher" thread or use a loop
-            threading.Thread(target=self._wait_for_auto_stop, args=(audio_path,), daemon=True).start()
-        else:
-            # Manual stop
-            audio_path = self.recorder.stop()
-            if audio_path:
-                self._process_recording(audio_path)
-    
-    def _wait_for_auto_stop(self, audio_path):
-        """Watches the recorder and processes if a timeout happens."""
-        while self.recorder.is_recording:
-            time.sleep(0.1)  # Check every 100ms
-        
-        # If we get here, the recorder stopped (either manually or via timeout)
-        # We check if we are already processing to avoid double-processing
-        if not self.is_processing:
-            self._process_recording(audio_path)
-        
-    def _start_recording(self) -> None:
-        audio_path = self.recorder.start()
-        print(f"[RECORDING] Listening... saving to {audio_path}")
+        # ---- state / concurrency guards ----
+        self.is_processing: bool = False
+        self._lock = threading.Lock()
 
-    def _process_recording(self, audio_path: Path | None) -> None:
-        if audio_path is None or not audio_path.exists():
-            print("[ERROR] Empty audio path. Please record again.")
+        self._current_audio_path: Path | None = None
+        self._last_processed_path: Path | None = None
+
+        # After an auto-stop completes, key-release may still call toggle().
+        # Ignore "start" toggles for a short window to avoid accidental new recordings.
+        self._ignore_start_until: float = 0.0  # monotonic seconds
+
+    # ---------------------------------------------------------------------
+    # Public API (keeps compatibility with your existing main.py)
+    # ---------------------------------------------------------------------
+    def toggle(self) -> None:
+        """Toggle recording state. Used by hotkey press/release."""
+        # If we're in the small ignore window (typically caused by auto-stop),
+        # do not start a new recording accidentally.
+        if not self.recorder.is_recording and time.monotonic() < self._ignore_start_until:
+            # Quietly ignore (or print a small info line)
+            # print("[INFO] Ignoring start (auto-stop cooldown).")
+            return
+
+        if not self.recorder.is_recording:
+            self.start_recording()
+        else:
+            self.stop_and_process()
+
+    def start_recording(self) -> None:
+        """Starts recording and spawns a watcher thread that processes if recorder stops itself."""
+        with self._lock:
+            if self.recorder.is_recording:
+                return
+            if self.is_processing:
+                print("[INFO] Busy processing previous audio. Please wait.")
+                return
+
+            audio_path = self.recorder.start()
+            self._current_audio_path = audio_path
+            print(f"[RECORDING] Listening... saving to {audio_path}")
+
+            # Watcher handles recorder auto-stop (if recorder has a max duration / internal stop)
+            threading.Thread(
+                target=self._wait_for_auto_stop,
+                args=(audio_path,),
+                daemon=True,
+            ).start()
+
+    def stop_and_process(self) -> None:
+        """Stops recording (manual stop) and processes the resulting audio once."""
+        audio_path = self.recorder.stop()
+        if not audio_path:
+            print("[ERROR] Recorder returned no audio path.")
+            return
+
+        print("[RECORDING] Stopped.")
+        self._process_recording_once(audio_path, source="manual-stop")
+
+    # ---------------------------------------------------------------------
+    # Internal helpers
+    # ---------------------------------------------------------------------
+    def _wait_for_auto_stop(self, audio_path: Path) -> None:
+        """Watches recorder and processes if it stops without a manual stop call."""
+        while self.recorder.is_recording:
+            time.sleep(0.1)
+
+        # recorder stopped (either by timeout/internal stop OR manual stop)
+        self._process_recording_once(audio_path, source="auto-stop")
+
+        # Prevent the immediate key-release (which calls toggle()) from starting a new recording
+        # right after auto-stop processing completes.
+        # This is a small UX guard; manual stop path already works fine.
+        self._ignore_start_until = time.monotonic() + 0.75
+
+    def _process_recording_once(self, audio_path: Path | None, source: str) -> None:
+        """Ensures a given audio path is processed at most once."""
+        if audio_path is None:
+            return
+
+        with self._lock:
+            # Skip duplicates: manual stop + watcher thread can race
+            if self._last_processed_path == audio_path:
+                return
+            if self.is_processing:
+                # Already processing something (rare). Skip duplicate processing.
+                return
+
+            self.is_processing = True
+            self._last_processed_path = audio_path
+
+        try:
+            self._process_recording(audio_path)
+        finally:
+            with self._lock:
+                self.is_processing = False
+                self._current_audio_path = None
+
+    def _process_recording(self, audio_path: Path) -> None:
+        """Runs the full pipeline: transcribe -> style -> paste -> cleanup."""
+        if not audio_path.exists():
+            print("[ERROR] Empty audio path or file missing. Please record again.")
             return
 
         raw_text = ""
@@ -88,4 +163,8 @@ class VoiceFlowOrchestrator:
         except PermissionError as exc:
             print(f"[ERROR] Paste injection failed: {exc}")
         finally:
-            Path(audio_path).unlink(missing_ok=True)
+            # Always clean up the temp audio file
+            try:
+                audio_path.unlink(missing_ok=True)
+            except Exception as exc:
+                print(f"[WARN] Could not delete temp audio file: {exc}")
