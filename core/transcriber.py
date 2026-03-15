@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Bilingual ASR transcription using faster-whisper.
 
 Step 3 goals:
@@ -9,7 +11,6 @@ Step 3 goals:
 
 """Bilingual ASR transcription using faster-whisper with language limits."""
 
-from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Optional
@@ -57,4 +58,7 @@ class Transcriber:
         
         if delete_audio:
             audio_file.unlink(missing_ok=True)
-        return text.strip()main()
+        return text.strip()
+
+if __name__ == "__main__":
+    main()
